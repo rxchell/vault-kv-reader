@@ -53,7 +53,8 @@ k3d (lightweight Kubernetes cluster)
 
 ## Implementation Steps
 1. Minimal Vault + local secret retrieval (no CI, no k8s)
-- [README](/vault/README.md)
+   - [Setting up Vault and storing secret](/vault/README.md)
+   - [Retrieving secret from Vault by the app](/app/README.md)
 
 2. Automated validation test against live Vault
 3. CI pipeline with Vault + dependency scanning
@@ -61,3 +62,21 @@ k3d (lightweight Kubernetes cluster)
 5. Containerisation
 6. Helm + k3d deployment
 7. Security & Enhancements
+
+## Set up Python environment 
+1. Create virtual environment. 
+   ```
+   python -m venv vaultenv
+   ```
+2. Activate virtual environment. 
+   ```
+   source vaultenv/bin/activate
+   ```
+3. Install necessary packages.
+   ```
+   pip install requirements.txt
+   ```
+4. (if required) Generate a new `requirements.txt`file based on the packages installed in the environment
+   ```
+   pip freeze > requirements.txt
+   ```
