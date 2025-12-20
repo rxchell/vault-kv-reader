@@ -38,12 +38,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
+
           VAULT_VERSION=1.15.6
-          wget https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
-          unzip vault_${VAULT_VERSION}_linux_amd64.zip
-          sudo mv vault /usr/local/bin/
+          mkdir -p /tmp/vault
+          wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip -O /tmp/vault/vault.zip
+
+          unzip -o /tmp/vault/vault.zip -d /tmp/vault
+          sudo mv /tmp/vault/vault /usr/local/bin/vault
+          sudo chmod +x /usr/local/bin/vault
+
           vault --version
-          
+     
       - name: Install dependencies 
         run: |
           pip install -r requirements.txt 

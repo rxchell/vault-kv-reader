@@ -119,6 +119,15 @@ Steps:
 5. Checkout code, pull repository into runner
 6. Set up python 
 7. Install `vault` CLI on the Github Actions runner
+   - Troubleshooting
+      - `vault` commands failed 
+         - GitHub Actions job was running a Vault server container, but the runner VM did not have the Vault CLI installed
+         - Solution: Add this step to download and unzip the Vault CLI
+      - Unzipping the `vault` CLI failed 
+         - `unzip vault_1.15.6_linux_amd64.zip` extracts the binary as `./vault`. But an existing `./vault` already exists in the current working directory.
+         - `unzip` tried to prompt to overwrite the existing vault file
+         - GitHub Actions runs in non-interactive mode, so the prompt could not be answered. Step exited with code 1.
+         - Solution: Force overwrite or extract to a clean temporary directory (e.g. `unzip -o` or `unzip` into `/tmp`) so no prompt occurs
 8. Install dependencies 
 9. Wait for Vault readiness
    - Poll Vault’s health endpoint to ensure the server is fully initialised before tests run; avoids race conditions and flaky builds
