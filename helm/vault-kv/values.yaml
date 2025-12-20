@@ -1,0 +1,8 @@
+image:
+  repository: vault-kv-reader
+  tag: latest
+
+vault:
+  addr: https://host.k3d.internal:8200
+
+resources: {}

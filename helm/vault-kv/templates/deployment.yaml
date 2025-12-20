@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: vault-kv-reader
+spec:
+  replicas: 1
+  selector: 
+    matchLabels:
+      app: vault-kv-reader
+  template:
+    matedata:
+      labels:
+        app: vault-kv-reader
+    spec:
+      containers:
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          env:
+            - name: VAULT_ADDR
+              value: "{{ .Values.vault.addr }}"
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: vault-token
+                  key: token
