@@ -34,6 +34,16 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Vault CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          VAULT_VERSION=1.15.6
+          wget https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
+          unzip vault_${VAULT_VERSION}_linux_amd64.zip
+          sudo mv vault /usr/local/bin/
+          vault --version
+          
       - name: Install dependencies 
         run: |
           pip install -r requirements.txt 

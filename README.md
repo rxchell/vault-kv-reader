@@ -111,22 +111,23 @@ Steps:
       - Listens on all interfaces so Github runner can access it
    - `--cap-add=IPC_LOCK`
       - Required by Vault to lock memory (security requirement)
-4. EConfigure Vault access
+4. Configure Vault access
    - Environment variables injected into all steps 
    - `VAULT_ADDR`: where app connects to Vault 
    - `VAULT_TOKEN`: how the app authenticates to Vault
    - `VAULT_SKIP_VERIFY`: skips TLS cert validation; required later in production if switching to HTTPS with self-signed certs 
 5. Checkout code, pull repository into runner
 6. Set up python 
-7. Install dependencies 
-8. Wait for Vault readiness
+7. Install `vault` CLI on the Github Actions runner
+8. Install dependencies 
+9. Wait for Vault readiness
    - Poll Vault’s health endpoint to ensure the server is fully initialised before tests run; avoids race conditions and flaky builds
-9. Seed a test secret
+10. Seed a test secret
    - Test-only secret written to the Vault KV v2 store at runtime
    - Secret value is generated dynamically and never committed to source control
-10. Run dependency vulnerability scanning
+11. Run dependency vulnerability scanning
    - Scan python dependencies with `pip-audit` to detect known Common Vulnerabilities and Exposures (CVEs)
-11. Run integration tests
+12. Run integration tests
    - Validate successful authentication and retrieval without asserting or exposing the secret value
 
 ### Vault Authentication in CI 
