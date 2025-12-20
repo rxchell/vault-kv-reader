@@ -7,7 +7,17 @@ Secrets retrieval from the KV store of a HashiCorp Vault instance
    - In CI, Vault runs in dev mode over HTTP, so TLS verification is intentionally disabled.
    - In production or cluster deployments, TLS is enabled by providing a CA certificate via Kubernetes secrets.
 
+---
+
 # Developer Guide
+1. [Repository Structure](#repository-structure)
+2. [Architecture](#architecture)
+3. [Implementation Steps](#implementation-steps)
+4. [Setting up Python environment](#setting-up-python-environment)
+5. [CI workflow](#ci-workflow)
+6. [Containerisation](#containerisation)
+7. [k3d cluster](#k3d-cluster)
+
 ## Repository Structure
 ```
 vault-kv-reader/
@@ -58,20 +68,27 @@ k3d (lightweight Kubernetes cluster)
 ```
 
 ## Implementation Steps
-1. Minimal Vault + local secret retrieval (no CI, no k8s)
+1. Set up Vault and local secret retrieval
    - [Setting up Vault and storing secret](/vault/README.md)
    - [Retrieving secret from Vault by the app](/app/README.md)
 
-2. Automated validation test against live Vault
+2. Validation test against live Vault
    - [Integration Test for secret retrieval](/app/test_vault.py)
 
-3. CI pipeline with Vault + dependency scanning
+3. CI pipeline with Vault and dependency scanning
    - [Development CI](.github/workflows/ci.yml)
-   - Production CI
+   - Production CI not implemented
 
 4. Containerisation
-5. Helm + k3d deployment
-6. Security & Enhancements
+   - [Dockerfile](./Dockerfile)
+   - [Refer to Containerisation documentation below](#containerisation)
+
+5. Kubernetes cluster (k3d)
+   - [Refer to k3d cluster documentation below](#k3d-cluster)
+
+6. Helm 
+
+7. Security & Enhancements
 
 ## Setting up Python environment 
 1. Create virtual environment. 
@@ -212,5 +229,82 @@ docker build -t vault-kv-reader .
 - `.` is the build context; Docker can access all files in current directory and copy them into the image
 
 
+## k3d cluster 
+- `k3d` runs a Kubernetes cluster inside Docker containers using k3s (a lightweight Kubernetes distribution).
+- Inside each Docker container:
+   - `kube-apiserver` handles API requests
+   - `kube-scheduler` schedules pods
+   - `kubelet` runs containers
+   - `containerd` runs the images
 
+### Creating the k3d cluster 
+1. Install `k3d`
+   ```
+   brew install k3d
+   ```
+2. Create the k3d cluster
+   ```
+   k3d cluster create vault-kv
+   ```
+   - Creates a Kubernetes control plane and one worker node, inside Docker containers
+3. Verify
+   ```
+   kubectl get nodes
+   ```
+4. The Kubernetes cluster is running locally.
 
+### Networking: how the app reaches Vault outside the cluster
+- `host.k3d.internal` resolves the problem where
+   - App runs inside Kubernetes and Docker containers
+   - Vault runs on the host, outside Kubernetes
+- `k3d` provides a special DNS name
+   ```
+   VAULT_ADDR: https://host.k3d.internal:8200
+   ```
+   - Resolves to: **Pod → Node → Docker → Host → Vault**
+- Flow
+   ```
+   Python app
+   ↓
+   Kubernetes Pod
+   ↓
+   k3d container
+   ↓
+   Docker network bridge
+   ↓
+   Host machine
+   ↓
+   Vault
+   ```
+- Allows the app to retrieve the secret from the same Vault instance outside the cluster
+
+### How secrets are handled inside `k3d`
+- Kubernetes Secrets
+- Create 
+   ```
+   kubectl create secret generic vault-token \
+   --from-literal=token=<vault-token>
+   ```
+- Inside the Pod
+   - Kubernetes injects the token as an env var
+   - Token exists only in memory
+   ```
+   env:
+   -  name: VAULT_TOKEN
+      valueFrom:
+         secretKeyRef:
+            name: vault-token
+            key: token
+   ```
+
+### Runtime flow inside k3d
+1. `k3d` starts cluster (Docker containers)
+2. Kubernetes API becomes available
+3. Helm deploys app
+4. Pod is scheduled to a `k3d` node
+5. Node pulls container image
+6. Kubernetes injects environment variables
+7. Container starts
+8. `python main.py` runs
+9. App connects to Vault over TLS
+10. Secret is retrieved
