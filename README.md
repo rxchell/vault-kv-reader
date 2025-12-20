@@ -153,3 +153,64 @@ Steps:
    - Token is never committed to version control
 > In a production environment, this is replaced with `AppRole` or `Kubernetes` authentication. Tokens would be short-lived and scoped to the minimum required permissions.
 
+
+## Containerisation
+- Packages the app and everything it needs to run into a single, reproducible unit (container image)
+   - Includes Python runtime, app code, Vault client library, Python dependencies
+- App can run the same way locally, in CI, in Kubernetes 
+- Secrets and Vault credentials are explicitly excluded from the image 
+   - Instead injected at runtime via environment variables and Kubernetes Secrets
+   - Allows container to securely connect over TLS to a Vault instance running outside the cluster
+   - Maintains immutability, reproducibility, strong security boundaries
+
+### Importance of containerisation
+| Aspect             | Why containerisation is needed          |
+| ------------------ | --------------------------------------- |
+| Helm deployment    | Helm deploys containers, not raw Python |
+| k3d cluster        | Kubernetes runs container images        |
+| CI reproducibility | CI runners are ephemeral                |
+| External Vault     | Container networking must be controlled |
+| Security           | Smaller attack surface                  |
+
+### How containerisation works 
+```
+Dockerfile
+   ↓
+docker build
+   ↓
+Container Image
+   ↓
+docker run / Kubernetes Pod
+   ↓
+Python app executes
+```
+
+### [Dockerfile](./Dockerfile)
+- `FROM python:3.11-slim`
+   - Uses a minimal Linux image
+   - Comes with Python pre-installed
+   - `slim` reduces image size and attack surface
+- `WORKDIR /app`
+   - All future commands run relative to `/app`
+- `COPY requirements.txt .`
+   - Enables Docker layer caching
+   - Dependencies do not reinstall if code changes
+   - Faster rebuilds in CI
+- `RUN pip install --no-cache-dir -r requirements.txt`
+   - Installs `hvac` (Vault client) and any other dependencies
+   - `--no-cache-dir` reduces image size, avoids leftover build artifacts
+- `COPY app/ .`
+   - Copies `main.py` and `vault_client.py` into container filesystem
+- `CMD ["python", "main.py"]`
+   - When container starts, Kubernetes executes the default command `python main.py`
+
+### `docker build`
+```
+docker build -t vault-kv-reader .
+```
+- Tags the image with the name `vault-kv-reader`
+- `.` is the build context; Docker can access all files in current directory and copy them into the image
+
+
+
+
