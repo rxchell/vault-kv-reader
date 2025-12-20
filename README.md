@@ -17,6 +17,7 @@ Secrets retrieval from the KV store of a HashiCorp Vault instance
 5. [CI workflow](#ci-workflow)
 6. [Containerisation](#containerisation)
 7. [k3d cluster](#k3d-cluster)
+8. [Deployment with Helm](#deployment-with-helm)
 
 ## Repository Structure
 ```
@@ -34,8 +35,7 @@ vault-kv-reader/
 │       ├── Chart.yaml
 │       ├── values.yaml
 │       └── templates/
-│           ├── deployment.yaml
-│           └── serviceaccount.yaml
+│           └── deployment.yaml
 ├── vault/
 │   ├── vault.hcl
 │   ├── tls/
@@ -79,14 +79,13 @@ k3d (lightweight Kubernetes cluster)
    - [Development CI](.github/workflows/ci.yml)
    - Production CI not implemented
 
-4. Containerisation
+4. [Containerisation](#containerisation)
    - [Dockerfile](./Dockerfile)
-   - [Refer to Containerisation documentation below](#containerisation)
 
-5. Kubernetes cluster (k3d)
-   - [Refer to k3d cluster documentation below](#k3d-cluster)
+5. [Kubernetes cluster (k3d)](#k3d-cluster)
 
-6. Helm 
+6. [Deployment with Helm](#deployment-with-helm)
+   - [Helm files](./helm/vault-kv/)
 
 7. Security & Enhancements
 
@@ -107,6 +106,8 @@ k3d (lightweight Kubernetes cluster)
    ```
    pip freeze > requirements.txt
    ```
+
+---
 
 ## CI workflow
 By **running Vault as a service container inside GitHub Actions**, the CI pipeline validates:
@@ -170,7 +171,7 @@ Steps:
    - Token is never committed to version control
 > In a production environment, this is replaced with `AppRole` or `Kubernetes` authentication. Tokens would be short-lived and scoped to the minimum required permissions.
 
-
+---
 ## Containerisation
 - Packages the app and everything it needs to run into a single, reproducible unit (container image)
    - Includes Python runtime, app code, Vault client library, Python dependencies
@@ -228,6 +229,7 @@ docker build -t vault-kv-reader .
 - Tags the image with the name `vault-kv-reader`
 - `.` is the build context; Docker can access all files in current directory and copy them into the image
 
+---
 
 ## k3d cluster 
 - `k3d` runs a Kubernetes cluster inside Docker containers using k3s (a lightweight Kubernetes distribution).
@@ -308,3 +310,46 @@ docker build -t vault-kv-reader .
 8. `python main.py` runs
 9. App connects to Vault over TLS
 10. Secret is retrieved
+
+---
+
+## Deployment with Helm
+- For deploying already-working containers into Kubernetes
+- Template engine and release manager for Kubernetes
+   - Takes templates ([`deployment.yaml`](./helm/vault-kv/templates/deployment.yaml))
+      - Runs the container
+      - Injects:
+         - Vault address (from Helm values)
+         - Vault token (from Kubernetes Secret)
+      - Keeps secrets out of Git, Docker image, Helm values
+   - Fills in values ([`values.yaml`](./helm/vault-kv/values.yaml))
+   - Sends real Kubernetes YAML to the cluster
+      - Without Helm:
+         ```
+         image: vault-kv-demo:latest
+         VAULT_ADDR: https://host.k3d.internal:8200
+         ```
+      - With Helm:
+         ```
+         image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+         VAULT_ADDR: {{ .Values.vault.addr }}
+         ```
+- Benefits:
+   - Change config without rewriting YAML
+   - Deploy same app to: local `k3d`, CI, production (hypothetically)
+
+### How Helm deploys the app 
+- Helm never runs the app (done by Kubernetes)
+```
+helm install vault-kv-demo helm/vault-kv-demo
+   ↓
+Helm renders templates
+   ↓
+Kubernetes Deployment created
+   ↓
+Pod pulls Docker image
+   ↓
+Env vars injected
+   ↓
+python main.py runs
+```
