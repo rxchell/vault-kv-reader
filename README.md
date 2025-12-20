@@ -100,7 +100,7 @@ Steps:
 2. `test` job runs on a Github-hosted Ubuntu VM
 3. Spin up a Vault instance
    - A real HashiCorp Vault server is started as a service container in dev mode.
-   - Dev mode is used as the CI environment is ephemeral and does not require manual unsealing.
+   - Dev mode is used (does not use TLS) as the CI environment is ephemeral and does not require manual unsealing.
    - GitHub Actions starts a Docker container alongside the job
    - `hashicorp/vault:1.15`
       - Official Vault image; version pinned for reproducible builds
