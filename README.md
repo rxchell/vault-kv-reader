@@ -2,7 +2,10 @@
 Secrets retrieval from the KV store of a HashiCorp Vault instance
 
 ## Key concepts
-- Transport Layer Security, TLS (previously: Secure Sockets Layer, SSL)
+#### Transport Layer Security, TLS (previously: Secure Sockets Layer, SSL)
+- The app supports TLS-secured Vault connections via the `VAULT_CACERT` environment variable.
+   - In CI, Vault runs in dev mode over HTTP, so TLS verification is intentionally disabled.
+   - In production or cluster deployments, TLS is enabled by providing a CA certificate via Kubernetes secrets.
 
 # Developer Guide
 ## Repository Structure
@@ -26,6 +29,7 @@ vault-kv-reader/
 ├── vault/
 │   ├── vault.hcl
 │   ├── tls/
+│   │   ├── openssl.cnf
 │   │   ├── vault.crt
 │   │   └── vault.key
 │   ├── init-vault.sh
@@ -65,10 +69,9 @@ k3d (lightweight Kubernetes cluster)
    - [Development CI](.github/workflows/ci.yml)
    - Production CI
 
-4. TLS hardening
-5. Containerisation
-6. Helm + k3d deployment
-7. Security & Enhancements
+4. Containerisation
+5. Helm + k3d deployment
+6. Security & Enhancements
 
 ## Setting up Python environment 
 1. Create virtual environment. 
@@ -91,7 +94,7 @@ k3d (lightweight Kubernetes cluster)
 ## CI workflow
 By **running Vault as a service container inside GitHub Actions**, the CI pipeline validates:
 - App can retrieve secrets from a real HashiCorp Vault instance
-- Communication works over HTTPS
+- Communication works over HTTP
 - Secrets are not hardcoded
 - Dependencies are free of known vulnerabilities
 
