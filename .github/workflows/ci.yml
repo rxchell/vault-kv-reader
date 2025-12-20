@@ -1,0 +1,67 @@
+name: CI - Vault KV Integration
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest 
+
+    services:
+      # vault service container
+      vault:
+        image: hashicorp/vault:1.15 
+        ports:
+          - 8200:8200
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: root
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        options: >-
+          --cap-add=IPC_LOCK
+    
+    env:
+      VAULT_ADDR: http://localhost:8200
+      VAULT_TOKEN: root 
+      VAULT_SKIP_VERIFY: "true"
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies 
+        run: |
+          pip install -r requirements.txt 
+        
+      - name: Wait for Vault to be ready
+        run: |
+          for i in {1..10}; do
+            if curl -k https://localhost:8200/v1/sys/health | grep '"initialized":true'; then
+              echo "Vault is ready"
+              exit 0
+            fi
+            echo "Waiting for Vault..."
+            sleep 2
+          done
+          echo "Vault did not start in time"
+          exit 1
+
+      - name: Enable KV and seed test secret
+        run: |
+          vault login root
+          vault secrets enable -path=kv kv-v2 || true
+          vault kv put kv/store password="$(uuidgen)"
+
+      - name: Dependency vulnerability scan
+        run: |
+          pip install pip-audit
+          pip-audit
+
+      - name: Run integration tests
+        run: |
+          pytest -v
