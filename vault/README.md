@@ -96,16 +96,22 @@ vault server -config=vault.hcl
     - Save the unseal keys and root token securely
     - Vault starts in a sealed state
 
-2. Run [`tls/init-vault.sh`](./init-vault.sh)
+2. Set `VAULT_TOKEN` env variable.
+    ```
+    export VAULT_TOKEN=<root-token>
+    ```
+    - Replace `<root-token>` with root token generated above.
+
+3. Run [`tls/init-vault.sh`](./init-vault.sh)
     ```
     ./init-vault.sh
     ```
     - Unseal Vault 
-    - Login (replace `<root_token>` with actual token from above)
+    - Login
     - Enable KV 
     - Store secret
     
-3. Verify that the secret is stored
+4. Verify that the secret is stored
     ```
     vault kv get kv/store
     ```
