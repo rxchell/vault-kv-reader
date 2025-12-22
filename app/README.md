@@ -13,3 +13,6 @@ Validates secure, TLS-enabled retrieval of secrets from a live HashiCorp Vault i
 - Connects to a Vault instance
 - Uses TLS and authentication
 - Reads from KV storage
+
+## Secuirty configuration
+TLS verification for Vault is configurable via Helm values (`vault.verifyTLS`) and optionally supports a custom CA bundle via `VAULT_CACERT`, following best practices for environment-based security configuration.

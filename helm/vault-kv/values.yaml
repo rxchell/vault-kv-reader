@@ -4,5 +4,6 @@ image:
 
 vault:
   addr: https://host.k3d.internal:8200
+  verifyTLS: false
 
 resources: {}

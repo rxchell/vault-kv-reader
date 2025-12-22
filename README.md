@@ -18,6 +18,7 @@ Secrets retrieval from the KV store of a HashiCorp Vault instance
 6. [Containerisation](#containerisation)
 7. [k3d cluster](#k3d-cluster)
 8. [Deployment with Helm](#deployment-with-helm)
+9. [Integrate k3d and Helm into CI](#integrate-k3d-and-helm-into-ci)
 
 ## Repository Structure
 ```
@@ -87,7 +88,7 @@ k3d (lightweight Kubernetes cluster)
 6. [Deployment with Helm](#deployment-with-helm)
    - [Helm files](./helm/vault-kv/)
 
-7. Security & Enhancements
+7. [Integrate k3d and Helm into CI](#integrate-k3d-and-helm-into-ci)
 
 ## Setting up Python environment 
 1. Create virtual environment. 
@@ -326,7 +327,7 @@ docker build -t vault-kv-reader .
    - Sends real Kubernetes YAML to the cluster
       - Without Helm:
          ```
-         image: vault-kv-demo:latest
+         image: vault-kv-reader:latest
          VAULT_ADDR: https://host.k3d.internal:8200
          ```
       - With Helm:
@@ -353,3 +354,125 @@ Env vars injected
    ↓
 python main.py runs
 ```
+
+---
+## Integrate k3d and Helm into CI
+### Steps
+1. Ensure Vault is running (outside `k3d`)
+   - Skip TLS verification (for local and CI) 
+      ```
+      export VAULT_ADDR=https://127.0.0.1:8200
+      export VAULT_SKIP_VERIFY=true
+      ```
+      - Resolves the problem of `tls: failed to verify certificate: x509: certificate signed by unknown authority`
+         - Vault is running with TLS enabled, using a self-signed certificate.
+         - macOS and Vault CLI do not trust self-signed certs by default.
+         - When Vault CLI tries to talk to `https://127.0.0.1:8200`, it refuses.
+   - To run vault after initialising, refer to step 2 onwards in [Vault documentation](./vault/README.md#start-vault-locally-with-tls)
+   - Verify that the vault is running
+      ```
+      vault status
+      ```
+      - Process running: Vault binary is up
+      - `Initialized: true`: Master key and unseal keys exist; Storage backend is ready
+      - `Sealed: false`: Encryption barrier is open, Vault can read and write secrets
+
+2. Create Kubernetes Secret for Vault token
+   ```
+   kubectl create secret generic vault-token \
+   --from-literal=token="$VAULT_TOKEN"
+   ```
+   - Use Kubernetes Secret as Kubernetes cannot read the shell environment
+   - Vault token → Kubernetes Secret → Pod env var
+   - Inside Kubernetes, this becomes
+      ```
+      apiVersion: v1
+      kind: Secret
+      data:
+      token: <base64>
+      ```
+   - Helm chart later does
+      ```
+      env:
+      - name: VAULT_TOKEN
+         valueFrom:
+            secretKeyRef:
+            name: vault-token
+            key: token
+      ```
+
+3. Build Docker image
+   ```
+   docker build -t vault-kv-reader:local .
+   ```
+   - Kubernetes does not build images
+   - The cluster needs a runnable container
+   - Image tag is `local`: Don’t push to registry
+
+4. Import image into `k3d`
+   ```
+   k3d image import vault-kv-reader:local -c vault-kv
+   ```
+   - `k3d` runs Kubernetes inside Docker
+   - Local Docker image (`docker images`) and `k3d` nodes (`docker ps`) are different Docker environments.
+   - Command copies the image and injects it into every `k3d` node
+   - Without this → `ImagePullBackOff`
+
+5. Deploy with Helm
+   ```
+   helm install vault-kv-reader helm/vault-kv \
+   --set image.repository=vault-kv-reader \
+   --set image.tag=local \
+   --set vault.addr=https://host.k3d.internal:8200
+   ```
+   - Helm:
+      - Reads `values.yaml`
+      - Applies `--set` overrides
+      - Renders templates → Kubernetes YAML
+      - Sends YAML to Kubernetes API
+   - Inside a pod:
+      - `localhost` = the container itself 
+      - `host.k3d.internal` = laptop ✅
+   - This is a k3d DNS bridge
+   - TLS verification is configurable via Helm values in `values.yaml`
+      ```yaml
+         vault:
+         verifyTLS: false
+      ```
+      - This value is passed as the `VAULT_VERIFY_TLS` environment variable to the container.
+         - `true` → full certificate verification
+         - `false` → skip verification (CI / local dev only)
+
+6a. Verify deployment
+   ```
+   kubectl get pods
+   kubectl logs deployment/vault-kv-reader
+   ```
+
+6b. Troubleshooting 
+   - Get logs with 
+      ```
+      kubectl logs pod/vault-kv-reader-<some-id>
+      ```
+      - `vault-kv-reader-<some-id>` is obtained from `kubectl get pods`
+   - `CrashLoopBackOff` status
+      - Cause: The app starts, reads secret from Vault, prints `example-secret`, and exits. When a container’s main process exits, Kubernetes interprets that as a crash.Since the deployment expects a long-running pod, Kubernetes restarts it, causing `CrashLoopBackOff`
+      - Solution: Keep the app alive. Modify the Python app to stay running after reading the secret.
+   - `InsecureRequestWarning: Unverified HTTPS request`
+      - Vault is using HTTPS. App is skipping cert verification (`verify=False`). This is acceptable for local dev / CI
+
+6c. If code changed from troubleshooting above, 
+   - Step 3: `docker build -t vault-kv-reader:local .`
+   - Step 4: `k3d image import vault-kv-reader:local -c vault-kv`
+   - Redeploy with helm
+      ```
+      helm upgrade vault-kv-reader helm/vault-kv \
+      --set image.repository=vault-kv-reader \
+      --set image.tag=local      
+      ```
+   - Verify deployment 
+      ```
+      kubectl get pods
+      ```
+
+7. 

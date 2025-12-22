@@ -17,12 +17,14 @@ vault operator unseal
 echo "==> Login to Vault"
 # Authenticate as root
 # Grants full administrative access
-# vault login <root-token>
+vault login "$VAULT_TOKEN"
 
 # Enable the Key-Value (KV) secrets engine
 # version 2, supports: versioning, soft deletes, secret history
 # mount at path /kv
-vault secrets enable -path=kv kv-v2
+if ! vault secrets list | grep -q '^kv/'; then
+  vault secrets enable -path=kv kv-v2
+fi
 
 # Create a secret at path kv/store
 # store the key-value pair "example-secret"
