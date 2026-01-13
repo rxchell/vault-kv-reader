@@ -19,6 +19,7 @@ Secrets retrieval from the KV store of a HashiCorp Vault instance
 7. [k3d cluster](#k3d-cluster)
 8. [Deployment with Helm](#deployment-with-helm)
 9. [Integrate k3d and Helm into CI](#integrate-k3d-and-helm-into-ci)
+10. [Dependency Security Handling](#dependency-security-handling)
 
 ## Repository Structure
 ```
@@ -475,4 +476,7 @@ python main.py runs
       kubectl get pods
       ```
 
-7. 
+## Dependency Security Handling
+Dependency vulnerability scanning is enforced in the CI pipeline using `pip-audit`.
+- The pipeline is configured to fail when known vulnerabilities are detected, ensuring insecure builds are blocked early.
+- During development, a vulnerability (CVE-2026-21441) was detected in `urllib3`. The dependency was upgraded to a patched version to remediate the issue, after which the pipeline passed successfully.
