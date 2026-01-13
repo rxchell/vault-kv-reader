@@ -1,4 +1,0 @@
-- uses: AbsaOSS/k3d-action@v2
-  with:
-    cluster-name: vault-demo
-    k3d-version: v5.6.0
