@@ -6,30 +6,57 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
 
     services:
       # vault service container
       vault:
-        image: hashicorp/vault:1.15 
+        image: hashicorp/vault:1.15
         ports:
           - 8200:8200
-        env:
-          VAULT_DEV_ROOT_TOKEN_ID: root
-          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        volumes:
+          - ${{ github.workspace }}/tls:/tls
         options: >-
           --cap-add=IPC_LOCK
-    
-    env:
-      VAULT_ADDR: http://localhost:8200
-      VAULT_TOKEN: root 
-      VAULT_SKIP_VERIFY: "true"
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          --entrypoint vault
+          server -dev
+          -dev-root-token-id=root
+          -dev-listen-address=0.0.0.0:8200
+          -tls-cert-file=/tls/vault.crt
+          -tls-key-file=/tls/vault.key
 
-      - name: Set up Python 
+    env:
+      VAULT_ADDR: https://localhost:8200
+      VAULT_TOKEN: root
+      VAULT_CACERT: ${{ github.workspace }}/tls/ca.crt
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate TLS certs for Vault
+        run: |
+          mkdir -p tls
+
+          openssl genrsa -out tls/ca.key 2048
+          openssl req -x509 -new -nodes -key tls/ca.key \
+            -subj "/CN=Vault-CA" \
+            -days 365 \
+            -out tls/ca.crt
+
+          openssl genrsa -out tls/vault.key 2048
+          openssl req -new -key tls/vault.key \
+            -subj "/CN=localhost" \
+            -out tls/vault.csr
+
+          openssl x509 -req -in tls/vault.csr \
+            -CA tls/ca.crt \
+            -CAkey tls/ca.key \
+            -CAcreateserial \
+            -out tls/vault.crt \
+            -days 365 \
+            -sha256
+
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -38,32 +65,25 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget unzip
-
           VAULT_VERSION=1.15.6
-          mkdir -p /tmp/vault
-          wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip -O /tmp/vault/vault.zip
-
-          unzip -o /tmp/vault/vault.zip -d /tmp/vault
-          sudo mv /tmp/vault/vault /usr/local/bin/vault
-          sudo chmod +x /usr/local/bin/vault
-
+          wget -q https://releases.hashicorp.com/vault/${VAULT_VERSION}/vault_${VAULT_VERSION}_linux_amd64.zip
+          unzip vault_${VAULT_VERSION}_linux_amd64.zip
+          sudo mv vault /usr/local/bin/
           vault --version
-     
-      - name: Install dependencies 
+
+      - name: Install dependencies
         run: |
-          pip install -r requirements.txt 
-        
+          pip install -r requirements.txt
+
       - name: Wait for Vault to be ready
         run: |
-          for i in {1..10}; do
-            if curl -k http://localhost:8200/v1/sys/health | grep '"initialized":true'; then
+          for i in {1..15}; do
+            if curl --cacert tls/ca.crt https://localhost:8200/v1/sys/health | grep '"initialized":true'; then
               echo "Vault is ready"
               exit 0
             fi
-            echo "Waiting for Vault..."
             sleep 2
           done
-          echo "Vault did not start in time"
           exit 1
 
       - name: Enable KV and seed test secret
@@ -80,7 +100,7 @@ jobs:
       - name: Run integration tests
         run: |
           pytest -v
-  
+
   k8s-e2e:
     runs-on: ubuntu-latest
     needs: test
@@ -90,11 +110,16 @@ jobs:
         image: hashicorp/vault:1.15
         ports:
           - 8200:8200
-        env:
-          VAULT_DEV_ROOT_TOKEN_ID: root
-          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        volumes:
+          - ${{ github.workspace }}/tls:/tls
         options: >-
           --cap-add=IPC_LOCK
+          --entrypoint vault
+          server -dev
+          -dev-root-token-id=root
+          -dev-listen-address=0.0.0.0:8200
+          -tls-cert-file=/tls/vault.crt
+          -tls-key-file=/tls/vault.key
 
     steps:
       - uses: actions/checkout@v4
@@ -112,18 +137,31 @@ jobs:
         run: |
           k3d image import vault-kv-reader:ci -c vault-kv
 
-      - name: Create Vault token secret
+      - name: Create Vault secrets
         run: |
           kubectl create secret generic vault-token \
-            --from-literal=token=root
+            --from-literal=token=root \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+          kubectl create secret generic vault-ca \
+            --from-file=ca.crt=tls/ca.crt \
+            --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Deploy app with Helm
         run: |
           helm install vault-kv-reader helm/vault-kv \
             --set image.repository=vault-kv-reader \
             --set image.tag=ci \
-            --set vault.addr=https://host.k3d.internal:8200
+            --set vault.addr=https://host.k3d.internal:8200 \
+            --set vault.caCert=/etc/vault/ca.crt
 
-      - name: Wait for pod
+      - name: Wait for deployment
         run: |
-          kubectl rollout status deployment/vault-kv-reader
+          kubectl rollout status deployment/vault-kv-reader --timeout=180s
+
+      - name: Debug pods on failure
+        if: failure()
+        run: |
+          kubectl get pods -o wide
+          kubectl describe pod -l app.kubernetes.io/name=vault-kv-reader || true
+          kubectl logs -l app.kubernetes.io/name=vault-kv-reader --all-containers=true || true
